@@ -1,0 +1,2 @@
+ALTER TABLE "Project" ALTER COLUMN "clientName" DROP NOT NULL;
+ALTER TABLE "Project" ALTER COLUMN "clientEmail" DROP NOT NULL;

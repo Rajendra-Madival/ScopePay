@@ -7,6 +7,7 @@ import { Button, PageHeading } from './Primitives'
 
 const inputClass = 'mt-1.5 block w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-800 outline-none transition placeholder:text-stone-400 focus:border-forest-500 focus:ring-4 focus:ring-forest-100'
 const currencies = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'] as const
+type ProjectCurrency = (typeof currencies)[number]
 
 type EditableMilestone = {
   title: string
@@ -90,7 +91,7 @@ export function ProjectForm({
   const [clientEmail, setClientEmail] = useState('')
   const [brief, setBrief] = useState('')
   const [budget, setBudget] = useState('')
-  const [currency, setCurrency] = useState<(typeof currencies)[number]>('USD')
+  const [currency, setCurrency] = useState<ProjectCurrency | ''>('')
   const [deadline, setDeadline] = useState('')
   const [plan, setPlan] = useState<EditablePlan | null>(null)
   const [generatedFor, setGeneratedFor] = useState('')
@@ -116,17 +117,13 @@ export function ProjectForm({
 
   async function generatePlan() {
     setError('')
-    if (brief.trim().length < 20) {
-      setError('Add at least 20 characters to the project brief before generating a plan.')
+    if (!brief.trim()) {
+      setError('Enter a project brief before generating a plan.')
       return
     }
-    if (!Number.isFinite(Number(budget)) || budgetCents < 1 ||
-      Math.abs(Number(budget) * 100 - budgetCents) >= 0.00001) {
+    if (budget.trim() && (!Number.isFinite(Number(budget)) || budgetCents < 1 ||
+      Math.abs(Number(budget) * 100 - budgetCents) >= 0.00001)) {
       setError('Enter a valid budget with no more than two decimal places.')
-      return
-    }
-    if (!deadline.trim()) {
-      setError('Add a deadline or expected timeframe before generating a plan.')
       return
     }
 
@@ -134,13 +131,23 @@ export function ProjectForm({
     try {
       const result = await analyzeProject({
         description: brief.trim(),
-        budget: Number(budget),
-        currency,
-        deadline: deadline.trim(),
+        ...(budget.trim() ? { budget: Number(budget) } : {}),
+        ...(currency ? { currency } : {}),
+        ...(deadline.trim() ? { deadline: deadline.trim() } : {}),
       })
       setTitle(result.projectTitle)
+      setClientName((current) => current || result.clientName)
+      setClientEmail((current) => current || result.clientEmail)
+      setBudget(result.totalEstimatedAmount.toFixed(2))
+      setCurrency(result.currency)
+      setDeadline(result.deadline)
       setPlan(toEditablePlan(result))
-      setGeneratedFor(requestFingerprint)
+      setGeneratedFor(JSON.stringify([
+        brief.trim(),
+        result.totalEstimatedAmount,
+        result.currency,
+        result.deadline.trim(),
+      ]))
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'The project plan could not be generated.')
     } finally {
@@ -162,6 +169,10 @@ export function ProjectForm({
     setSaving(true)
     setError('')
     try {
+      if (!Number.isFinite(Number(budget)) || budgetCents < 1 ||
+        Math.abs(Number(budget) * 100 - budgetCents) >= 0.00001) {
+        throw new Error('Enter a valid project budget before creating the project.')
+      }
       if (plan && !planIsCurrent) {
         throw new Error('The brief, budget, currency, or deadline changed. Regenerate the plan before approving it.')
       }
@@ -218,7 +229,7 @@ export function ProjectForm({
         <form className="rounded-2xl border border-stone-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(27,39,30,0.03)] sm:p-7" onSubmit={handleSubmit}>
           <div className="mb-6 flex items-center gap-3 border-b border-stone-100 pb-5">
             <span className="flex size-10 items-center justify-center rounded-xl bg-forest-50 text-forest-700"><Icon className="size-[19px]" name="file" /></span>
-            <div><h2 className="text-sm font-semibold text-stone-900">Project details</h2><p className="mt-0.5 text-xs text-stone-500">Add the client information and project brief</p></div>
+            <div><h2 className="text-sm font-semibold text-stone-900">Project details</h2><p className="mt-0.5 text-xs text-stone-500">Describe the project; client contact details are optional</p></div>
           </div>
           {error && <p className="mb-5 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">{error}</p>}
           <div className="space-y-5">
@@ -226,38 +237,40 @@ export function ProjectForm({
               <input autoFocus className={inputClass} maxLength={120} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Brand identity and website" required value={title} />
             </label>
             <div className="grid gap-5 sm:grid-cols-2">
-              <label className="block text-sm font-medium text-stone-700">Client name <span className="text-rose-500">*</span>
-                <input className={inputClass} maxLength={120} onChange={(event) => setClientName(event.target.value)} placeholder="e.g. Acme Studio" required value={clientName} />
+              <label className="block text-sm font-medium text-stone-700">Client name <span className="font-normal text-stone-400">(optional)</span>
+                <input className={inputClass} maxLength={120} onChange={(event) => setClientName(event.target.value)} placeholder="e.g. Acme Studio" value={clientName} />
               </label>
-              <label className="block text-sm font-medium text-stone-700">Client email <span className="text-rose-500">*</span>
-                <input autoComplete="email" className={inputClass} onChange={(event) => setClientEmail(event.target.value)} placeholder="name@company.com" required type="email" value={clientEmail} />
+              <label className="block text-sm font-medium text-stone-700">Client email <span className="font-normal text-stone-400">(optional)</span>
+                <input autoComplete="email" className={inputClass} onChange={(event) => setClientEmail(event.target.value)} placeholder="name@company.com" type="email" value={clientEmail} />
               </label>
             </div>
             <label className="block text-sm font-medium text-stone-700">Client project brief <span className="text-rose-500">*</span>
               <textarea className={`${inputClass} min-h-36 resize-y leading-6`} maxLength={10000} onChange={(event) => setBrief(event.target.value)} placeholder="Paste the client's project description, goals, deliverables, and important context." required value={brief} />
+              <span className="mt-1 block text-xs font-normal text-stone-500">A complete brief is enough to generate a draft. Include any client contact details, budget, currency, and deadline you already know.</span>
               <span className="mt-1 block text-right text-xs font-normal text-stone-400">{brief.length}/10,000</span>
             </label>
             <div className="grid gap-5 sm:grid-cols-2">
-              <label className="block text-sm font-medium text-stone-700">Budget <span className="text-rose-500">*</span>
+              <label className="block text-sm font-medium text-stone-700">Budget <span className="font-normal text-stone-400">(optional; inferred or estimated from brief)</span>
                 <span className="relative mt-1.5 block">
-                  <span className="absolute inset-y-0 left-3.5 flex items-center text-sm text-stone-400">{currency}</span>
-                  <input className={`${inputClass} mt-0 pl-14`} max="21474836.47" min="0.01" onChange={(event) => setBudget(event.target.value)} placeholder="0.00" required step="0.01" type="number" value={budget} />
+                  <span className="absolute inset-y-0 left-3.5 flex items-center text-sm text-stone-400">{currency || 'Auto'}</span>
+                  <input className={`${inputClass} mt-0 pl-14`} max="21474836.47" min="0.01" onChange={(event) => setBudget(event.target.value)} placeholder="Leave blank to infer" step="0.01" type="number" value={budget} />
                 </span>
               </label>
-              <label className="block text-sm font-medium text-stone-700">Currency
-                <select className={inputClass} onChange={(event) => setCurrency(event.target.value as (typeof currencies)[number])} value={currency}>
+              <label className="block text-sm font-medium text-stone-700">Currency <span className="font-normal text-stone-400">(optional)</span>
+                <select className={inputClass} onChange={(event) => setCurrency(event.target.value as ProjectCurrency | '')} value={currency}>
+                  <option value="">Infer from brief</option>
                   {currencies.map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
               </label>
             </div>
-            <label className="block text-sm font-medium text-stone-700">Deadline or expected timeframe <span className="text-rose-500">*</span>
-              <input className={inputClass} maxLength={120} onChange={(event) => setDeadline(event.target.value)} placeholder="e.g. 30 days or 2027-02-15" required value={deadline} />
+            <label className="block text-sm font-medium text-stone-700">Deadline or expected timeframe <span className="font-normal text-stone-400">(optional)</span>
+              <input className={inputClass} maxLength={120} onChange={(event) => setDeadline(event.target.value)} placeholder="Leave blank to infer from brief" value={deadline} />
             </label>
             <div className="rounded-2xl border border-[#dce9df] bg-[#f5f8f5] p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-sm font-semibold text-stone-900">AI project plan</h3>
-                  <p className="mt-1 text-xs leading-5 text-stone-500">Generate suggested scope and milestone amounts. Nothing is saved until you approve the plan.</p>
+                  <p className="mt-1 text-xs leading-5 text-stone-500">Generate the draft from the brief. Missing budget details become editable suggestions. Nothing is saved until you approve the plan.</p>
                 </div>
                 <Button disabled={generating || saving} icon="sparkle" onClick={() => { void generatePlan() }} type="button" variant="secondary">
                   {generating ? 'Generating…' : plan ? 'Regenerate plan' : 'Generate project plan'}
@@ -335,7 +348,7 @@ export function ProjectForm({
         <aside className="rounded-2xl border border-[#dce9df] bg-[#eff5f0] p-5">
           <div className="flex size-9 items-center justify-center rounded-xl bg-white text-forest-700"><Icon className="size-[18px]" name="sparkle" /></div>
           <h2 className="mt-4 text-sm font-semibold text-forest-900">A clear scope starts here</h2>
-          <p className="mt-1.5 text-sm leading-6 text-forest-800/75">Gemini helps turn the client brief into an editable starting point. You stay in control of every scope and milestone decision.</p>
+          <p className="mt-1.5 text-sm leading-6 text-forest-800/75">Gemini turns the client brief into an editable starting point. You stay in control of every scope and milestone decision.</p>
           <div className="mt-5 space-y-3 border-t border-forest-900/10 pt-4 text-xs leading-5 text-forest-800/80">
             <p className="flex gap-2"><Icon className="mt-0.5 size-4 shrink-0" name="check" /> Generated amounts are suggestions, not approved charges.</p>
             <p className="flex gap-2"><Icon className="mt-0.5 size-4 shrink-0" name="check" /> Unapproved AI drafts are not stored.</p>

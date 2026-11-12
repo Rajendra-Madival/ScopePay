@@ -30,6 +30,8 @@ The frontend defaults to `http://localhost:5173` and the API to `http://localhos
 
 Registration and login use server-side bcrypt password hashes and persistent database sessions. The browser receives a `Secure`/`HttpOnly` session cookie in production; development uses an HTTP cookie for localhost. Mutating requests use a same-site CSRF cookie/header pair and are restricted to `FRONTEND_ORIGIN`.
 
+For local Postman testing, `FRONTEND_ORIGIN` defaults to `http://localhost:5173`. In non-production environments, requests without an `Origin` header are accepted; if you send an `Origin`, it must match the configured frontend origin. Production continues to require the exact allowed origin and HTTPS. Authenticated mutations still require the session cookies and CSRF header.
+
 Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` together to enable password reset emails. Without all five settings, password recovery returns an explicit `503`; no reset token is exposed by the API. Password reset links expire after 30 minutes and can be used once.
 
 For production, set `NODE_ENV=production`, use an HTTPS `FRONTEND_ORIGIN`, and terminate TLS at the server or its trusted reverse proxy. The API rejects non-HTTPS production requests and marks both cookies Secure. The configured proxy hop count in `backend/src/app.ts` must match the deployment topology.
@@ -39,7 +41,7 @@ For production, set `NODE_ENV=production`, use an HTTPS `FRONTEND_ORIGIN`, and t
 Scope-change analysis uses the OpenAI Responses API. Set `OPENAI_API_KEY` in `backend/.env`; `OPENAI_MODEL` defaults to `gpt-4.1-mini`. The API key remains on the backend. Only the original and updated requirement text is sent to OpenAI, with response storage disabled. Analysis is qualitative guidance, not a price, schedule, or approval.
 The authenticated, owner-checked analysis endpoint is `POST /api/projects/:projectId/scope-changes/analyze`.
 
-Project planning uses the official Google GenAI SDK. Set `GEMINI_API_KEY` in `backend/.env`; `GEMINI_MODEL` defaults to `gemini-3.6-flash`. Keep this key on the server and never add it to the frontend. The authenticated endpoint `POST /api/ai/analyze-project` returns a validated draft; generated plans are not stored until the freelancer approves them. Milestone amounts are suggestions and must total the supplied budget. The project and approved milestones are saved together in one database transaction.
+Project planning uses the official Google GenAI SDK. Set `GEMINI_API_KEY` in `backend/.env`; `GEMINI_MODEL` defaults to `gemini-3.6-flash`. Keep this key on the server and never add it to the frontend. The authenticated endpoint `POST /api/ai/analyze-project` requires only a project description; it extracts stated details and suggests a budget when one is absent. Client contact details remain blank unless present in the brief, and are optional. Review all inferred details and milestone suggestions before approval; generated plans are not stored until approved. Milestones must total the approved project budget and are saved with the project in one database transaction. A transient Gemini 503 is retried once; persistent provider outages still require Gemini to recover.
 
 PayPal checkout is configured for Sandbox by default. To enable it locally:
 

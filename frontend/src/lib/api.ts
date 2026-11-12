@@ -27,6 +27,8 @@ type ApiMilestone = {
 
 export type GeneratedProjectPlan = {
   projectTitle: string
+  clientName: string
+  clientEmail: string
   summary: string
   requirements: string[]
   assumptions: string[]
@@ -40,6 +42,8 @@ export type GeneratedProjectPlan = {
   risks: string[]
   missingInformation: string[]
   clientQuestions: string[]
+  currency: 'USD' | 'EUR' | 'GBP' | 'CAD' | 'AUD'
+  deadline: string
   totalEstimatedAmount: number
   estimatedDurationDays: number
 }
@@ -56,8 +60,8 @@ function readCsrfCookie() {
 type ApiProject = {
   id: string
   title: string
-  clientName: string
-  clientEmail: string
+  clientName: string | null
+  clientEmail: string | null
   description: string
   budget: number
   currency: string
@@ -89,7 +93,7 @@ export type Payment = {
   milestone: {
     id: string
     title: string
-    project: { id: string; title: string; clientName: string }
+    project: { id: string; title: string; clientName: string | null }
   }
 }
 
@@ -209,8 +213,8 @@ function mapProject(project: ApiProject): Project {
   return {
     id: project.id,
     title: project.title,
-    clientName: project.clientName,
-    clientEmail: project.clientEmail,
+    clientName: project.clientName ?? '',
+    clientEmail: project.clientEmail ?? '',
     brief: project.description,
     budgetCents: project.budget,
     currency: project.currency,
@@ -293,8 +297,8 @@ export async function createProject(project: ProjectDraft) {
     method: 'POST',
     body: JSON.stringify({
       title: project.title,
-      clientName: project.clientName,
-      clientEmail: project.clientEmail,
+      clientName: project.clientName.trim() || null,
+      clientEmail: project.clientEmail.trim() || null,
       description: project.brief,
       budget: project.budgetCents,
       currency: project.currency,
@@ -318,9 +322,9 @@ export async function createProject(project: ProjectDraft) {
 
 export async function analyzeProject(input: {
   description: string
-  budget: number
-  currency: string
-  deadline: string
+  budget?: number
+  currency?: string
+  deadline?: string
 }) {
   return request<GeneratedProjectPlan>('/api/ai/analyze-project', {
     method: 'POST',

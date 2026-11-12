@@ -8,10 +8,10 @@ const planText = z.string().trim().min(1).max(500)
 const moneyLimit = 21_474_836.47
 
 export const analyzeProjectInputSchema = z.object({
-  description: z.string().trim().min(20).max(10_000),
-  budget: z.number().finite().positive().max(moneyLimit),
-  currency: projectCurrencySchema,
-  deadline: z.string().trim().min(1).max(120),
+  description: z.string().trim().min(1).max(10_000),
+  budget: z.number().finite().positive().max(moneyLimit).optional(),
+  currency: projectCurrencySchema.optional(),
+  deadline: z.string().trim().min(1).max(120).optional(),
 }).strict()
 
 export const generatedPlanMilestoneSchema = z.object({
@@ -24,6 +24,11 @@ export const generatedPlanMilestoneSchema = z.object({
 
 export const generatedProjectPlanSchema = z.object({
   projectTitle: z.string().trim().min(1).max(120),
+  clientName: z.string().trim().max(120),
+  clientEmail: z.string().trim().max(254).refine(
+    (value) => value === '' || z.email().safeParse(value).success,
+    'Client email must be valid when provided',
+  ),
   summary: z.string().trim().min(1).max(3000),
   requirements: z.array(planText).min(1).max(20),
   assumptions: z.array(planText).max(20),
@@ -31,6 +36,8 @@ export const generatedProjectPlanSchema = z.object({
   risks: z.array(planText).max(20),
   missingInformation: z.array(planText).max(20),
   clientQuestions: z.array(planText).max(20),
+  currency: projectCurrencySchema,
+  deadline: z.string().trim().max(120),
   totalEstimatedAmount: z.number().finite().positive().max(moneyLimit),
   estimatedDurationDays: z.number().int().min(1).max(3650),
 }).strict()

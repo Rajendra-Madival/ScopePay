@@ -89,7 +89,7 @@ export function Dashboard({
               <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5" key={`${project.id}-${milestone.id}`}>
                 <div>
                   <p className="text-sm font-semibold text-stone-800">{milestone.title}</p>
-                  <p className="text-xs text-stone-500">{project.clientName} · {project.title}</p>
+                  <p className="text-xs text-stone-500">{project.clientName || 'Client not specified'} · {project.title}</p>
                 </div>
                 <span className="text-sm font-semibold text-forest-700">{formatMoney(milestone.amountCents, project.currency)}</span>
               </div>
@@ -142,13 +142,13 @@ export function Dashboard({
                   onClick={() => onOpenProject(project.id)}
                 >
                   <span className="flex min-w-0 items-center gap-3">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#edf3ee] text-xs font-bold text-forest-800">{initials(project.clientName)}</span>
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#edf3ee] text-xs font-bold text-forest-800">{initials(project.clientName || 'Client')}</span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold text-stone-800">{project.title}</span>
-                      <span className="mt-0.5 block text-xs text-stone-400 sm:hidden">{project.clientName}</span>
+                      <span className="mt-0.5 block text-xs text-stone-400 sm:hidden">{project.clientName || 'Client not specified'}</span>
                     </span>
                   </span>
-                  <span className="hidden text-sm text-stone-600 sm:block">{project.clientName}</span>
+                  <span className="hidden text-sm text-stone-600 sm:block">{project.clientName || 'Client not specified'}</span>
                   <span className="hidden sm:block">
                     {project.milestones.length ? (
                       <>

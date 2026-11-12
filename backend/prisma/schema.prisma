@@ -71,8 +71,8 @@ model Project {
   id          String        @id @default(cuid())
   ownerId     String?
   title       String
-  clientName  String
-  clientEmail String
+  clientName  String?
+  clientEmail String?
   description String
   budget      Int
   currency    String        @default("USD")

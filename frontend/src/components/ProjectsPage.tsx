@@ -60,7 +60,7 @@ export function ProjectsPage({
                   <ProjectStatusBadge completed={project.status === 'completed'} />
                 </div>
                 <h2 className="mt-5 text-base font-semibold text-stone-900 group-hover:text-forest-800">{project.title}</h2>
-                <p className="mt-1 text-sm text-stone-500">{project.clientName}</p>
+                <p className="mt-1 text-sm text-stone-500">{project.clientName || 'Client not specified'}</p>
                 <div className="my-5 border-t border-stone-100" />
                 <div className="grid grid-cols-2 gap-3">
                   <div><p className="text-xs text-stone-400">Project budget</p><p className="mt-1 text-sm font-semibold text-stone-800">{formatMoney(project.budgetCents, project.currency)}</p></div>

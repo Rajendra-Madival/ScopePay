@@ -11,11 +11,18 @@ const { createProjectsRouter } = await import('../src/routes/projects.js')
 const { errorHandler, HttpError } = await import('../src/middleware/errors.js')
 const { createGeminiProjectPlanner } = await import('../src/services/geminiProjectPlanner.js')
 
-function makePlan(total: number, title: string) {
+function makePlan(total: number, title: string, overrides: Partial<{
+  clientName: string
+  clientEmail: string
+  currency: 'USD' | 'EUR' | 'GBP' | 'CAD' | 'AUD'
+  deadline: string
+}> = {}) {
   const firstAmount = Math.round(total * 60) / 100
   const secondAmount = Number((total - firstAmount).toFixed(2))
   return {
     projectTitle: title,
+    clientName: '',
+    clientEmail: '',
     summary: `Plan for ${title}`,
     requirements: ['Deliver the requested solution'],
     assumptions: ['Client provides timely feedback'],
@@ -38,8 +45,11 @@ function makePlan(total: number, title: string) {
     risks: ['Feedback delays may affect schedule'],
     missingInformation: [],
     clientQuestions: ['Who will approve the final delivery?'],
+    currency: 'USD',
+    deadline: '',
     totalEstimatedAmount: total,
     estimatedDurationDays: 10,
+    ...overrides,
   }
 }
 
@@ -62,7 +72,11 @@ test('planner returns validated structured plans for three distinct project desc
   const receivedDescriptions: string[] = []
   const planner = createGeminiProjectPlanner(async (input, budgetMinorUnits) => {
     receivedDescriptions.push(input.description)
-    return JSON.stringify(makePlan(budgetMinorUnits / 100, `Plan ${receivedDescriptions.length}`))
+    return JSON.stringify(makePlan(
+      budgetMinorUnits! / 100,
+      `Plan ${receivedDescriptions.length}`,
+      { currency: input.currency, deadline: input.deadline },
+    ))
   }, { apiKey: '', model: 'test-model' })
 
   const plans = await Promise.all(inputs.map((input) => planner(input)))
@@ -186,25 +200,54 @@ test('AI analysis route limits requests per authenticated user', async () => {
   assert.equal(planCalls, 5)
 })
 
-test('AI analysis route validates required input before calling the planner', async () => {
+test('AI analysis requires a nonempty brief and accepts concise descriptions', async () => {
   let planCalls = 0
   const planner = createGeminiProjectPlanner(async (input, budgetMinorUnits) => {
     planCalls += 1
-    return JSON.stringify(makePlan(budgetMinorUnits / 100, input.description))
+    return JSON.stringify(makePlan(
+      budgetMinorUnits === undefined ? 1250 : budgetMinorUnits / 100,
+      input.description,
+      { currency: input.currency ?? 'USD', deadline: input.deadline ?? '' },
+    ))
   }, { apiKey: '', model: 'test-model' })
   const app = createAuthenticatedApp()
   app.use('/api/ai', createAiRouter(planner))
   app.use(errorHandler)
 
-  const responseWithoutBudget = await request(app)
+  const responseDescriptionOnly = await request(app)
     .post('/api/ai/analyze-project')
-    .send({ description: 'A valid project brief with enough content.', currency: 'USD', deadline: '30 days' })
+    .send({ description: 'Build a responsive bakery website with an online menu.' })
+  const responseWithEmptyDescription = await request(app)
+    .post('/api/ai/analyze-project')
+    .send({ description: '  ', budget: 1000, currency: 'USD', deadline: '30 days' })
   const responseWithShortDescription = await request(app)
     .post('/api/ai/analyze-project')
-    .send({ description: 'Too short', budget: 1000, currency: 'USD', deadline: '30 days' })
-  assert.equal(responseWithoutBudget.status, 400)
-  assert.equal(responseWithShortDescription.status, 400)
-  assert.equal(planCalls, 0)
+    .send({ description: 'Website', budget: 1000, currency: 'USD', deadline: '30 days' })
+  assert.equal(responseDescriptionOnly.status, 200)
+  assert.equal(responseDescriptionOnly.body.totalEstimatedAmount, 1250)
+  assert.equal(responseDescriptionOnly.body.currency, 'USD')
+  assert.equal(responseDescriptionOnly.body.deadline, '')
+  assert.equal(responseWithEmptyDescription.status, 400)
+  assert.equal(responseWithShortDescription.status, 200)
+  assert.equal(planCalls, 2)
+})
+
+test('planner retries Gemini once after a temporary outage', async () => {
+  let calls = 0
+  const planner = createGeminiProjectPlanner(async (input, budgetMinorUnits) => {
+    calls += 1
+    if (calls === 1) throw { status: 503 }
+    return JSON.stringify(makePlan(
+      budgetMinorUnits === undefined ? 900 : budgetMinorUnits / 100,
+      'Recovered plan',
+      { currency: input.currency ?? 'USD', deadline: input.deadline ?? '' },
+    ))
+  }, { apiKey: 'configured-for-test', model: 'test-model' })
+
+  const plan = await planner({ description: 'Create a landing page for a local studio.' })
+  assert.equal(calls, 2)
+  assert.equal(plan.totalEstimatedAmount, 900)
+  assert.equal(plan.currency, 'USD')
 })
 
 test('approved project and milestone records are persisted together under the authenticated owner', async () => {
@@ -237,8 +280,8 @@ test('approved project and milestone records are persisted together under the au
 
   const input = {
     title: 'Website refresh',
-    clientName: 'Acme Studio',
-    clientEmail: 'client@example.com',
+    clientName: null,
+    clientEmail: null,
     description: 'A responsive company website with a contact form.',
     budget: 100000,
     currency: 'USD',
@@ -261,6 +304,8 @@ test('approved project and milestone records are persisted together under the au
   assert.equal(response.status, 201, JSON.stringify(response.body))
   assert.equal(transactionCalls, 1)
   assert.equal(savedProjects[0]?.ownerId, 'test-owner')
+  assert.equal(savedProjects[0]?.clientName, null)
+  assert.equal(savedProjects[0]?.clientEmail, null)
   assert.equal(savedProjects[0]?.deadline, '30 days')
   assert.equal(savedMilestones.length, 2)
   assert.ok(savedMilestones.every((milestone) => milestone.projectId === 'project-1'))

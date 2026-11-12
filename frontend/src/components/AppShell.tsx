@@ -74,22 +74,30 @@ export function AppShell({
               <p className="truncate text-sm font-semibold text-stone-800">{user?.name ?? 'Guest'}</p>
               <p className="text-xs text-stone-500">{user ? 'Workspace owner' : 'Guest access'}</p>
             </div>
-            {user && (
-              <button
-                aria-current={page === 'profile' ? 'page' : undefined}
-                className="text-xs font-medium text-forest-700 hover:text-forest-800"
-                onClick={() => onNavigate('profile')}
-                type="button"
-              >
-                Profile
-              </button>
-            )}
-            {onLogout && (
-              <button className="text-xs font-medium text-stone-500 hover:text-stone-800" onClick={onLogout} type="button">
-                Log out
-              </button>
-            )}
           </div>
+          {(user || onLogout) && (
+            <div className="mt-2 grid gap-1">
+              {user && (
+                <button
+                  aria-current={page === 'profile' ? 'page' : undefined}
+                  className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-forest-700 transition-colors hover:bg-forest-50 hover:text-forest-800"
+                  onClick={() => onNavigate('profile')}
+                  type="button"
+                >
+                  Profile
+                </button>
+              )}
+              {onLogout && (
+                <button
+                  className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900"
+                  onClick={onLogout}
+                  type="button"
+                >
+                  Log out
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -110,10 +118,10 @@ export function AppShell({
               {page === 'details' ? 'Project details' : page === 'create' ? 'New project' : page}
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {user && (
               <button
-                className="rounded-full px-2 py-1.5 text-xs font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900 sm:px-3"
+                className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900"
                 onClick={() => onNavigate('profile')}
                 type="button"
               >
@@ -124,7 +132,7 @@ export function AppShell({
               {user ? `${user.name.split(' ')[0]}'s workspace` : 'Preview workspace'}
             </span>
             {onLogout && (
-              <button className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-600 hover:text-stone-900" onClick={onLogout} type="button">
+              <button className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900" onClick={onLogout} type="button">
                 Log out
               </button>
             )}

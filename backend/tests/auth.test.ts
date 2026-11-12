@@ -11,6 +11,8 @@ const { createApp } = await import('../src/app.js')
 const { createAuthRouter } = await import('../src/routes/auth.js')
 const { errorHandler } = await import('../src/middleware/errors.js')
 const { hashOpaqueToken } = await import('../src/services/auth.js')
+const { requireSameOrigin } = await import('../src/middleware/auth.js')
+const { env } = await import('../src/config/env.js')
 
 type TestUser = {
   id: string
@@ -351,6 +353,27 @@ function cookieValue(response: request.Response, name: string) {
 function withOrigin<T extends request.Test>(testRequest: T) {
   return testRequest.set('Origin', origin)
 }
+
+test('allows originless local API clients but keeps the production origin check strict', async () => {
+  const originalNodeEnvironment = env.NODE_ENV
+  const app = express()
+  app.post('/mutate', requireSameOrigin, (_request, response) => response.sendStatus(204))
+  app.use(errorHandler)
+
+  try {
+    env.NODE_ENV = 'test'
+    await request(app).post('/mutate').expect(204)
+    await withOrigin(request(app).post('/mutate')).expect(204)
+    await request(app).post('/mutate').set('Origin', 'https://untrusted.example').expect(403)
+
+    env.NODE_ENV = 'production'
+    await request(app).post('/mutate').expect(403)
+    await withOrigin(request(app).post('/mutate')).expect(204)
+    await request(app).post('/mutate').set('Origin', 'https://untrusted.example').expect(403)
+  } finally {
+    env.NODE_ENV = originalNodeEnvironment
+  }
+})
 
 test('registers safely, rejects duplicate emails, and logs in only with the correct password', async () => {
   const { database, state } = createDatabase()

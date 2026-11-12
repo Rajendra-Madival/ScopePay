@@ -262,7 +262,7 @@ export function ProjectDetails({
       <PageHeading
         eyebrow="Project details"
         title={project.title}
-        description={`Created ${formatDate(project.createdAt)} · Project with ${project.clientName}`}
+        description={`Created ${formatDate(project.createdAt)} · Project with ${project.clientName || 'client'}`}
         action={<ProjectStatusBadge completed={project.status === 'completed'} />}
       />
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
@@ -273,7 +273,7 @@ export function ProjectDetails({
               <h2 className="text-sm font-semibold text-stone-900">Project overview</h2>
             </div>
             <div className="grid gap-5 py-5 sm:grid-cols-2">
-              <div><p className="text-xs font-medium text-stone-400">Client</p><p className="mt-1.5 text-sm font-semibold text-stone-800">{project.clientName}</p><a className="mt-1 inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-forest-700" href={`mailto:${project.clientEmail}`}><Icon className="size-3.5" name="mail" />{project.clientEmail}</a></div>
+              <div><p className="text-xs font-medium text-stone-400">Client</p><p className="mt-1.5 text-sm font-semibold text-stone-800">{project.clientName || 'Not specified'}</p>{project.clientEmail && <a className="mt-1 inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-forest-700" href={`mailto:${project.clientEmail}`}><Icon className="size-3.5" name="mail" />{project.clientEmail}</a>}</div>
               <div><p className="text-xs font-medium text-stone-400">Total project budget</p><p className="mt-1.5 text-lg font-semibold tracking-tight text-stone-900">{formatMoney(project.budgetCents, project.currency)}</p></div>
             </div>
             {project.deadline && <div className="border-t border-stone-100 py-4"><p className="text-xs font-medium text-stone-400">Deadline or expected timeframe</p><p className="mt-1.5 text-sm font-semibold text-stone-800">{project.deadline}</p></div>}

@@ -81,6 +81,13 @@ export const requireCsrf: RequestHandler = (request, _response, next) => {
 
 export const requireSameOrigin: RequestHandler = (request, _response, next) => {
   const origin = request.get('origin')
+  if (!origin) {
+    if (env.NODE_ENV !== 'production') {
+      next()
+      return
+    }
+    throw new HttpError(403, 'Request origin is not allowed')
+  }
   if (origin !== env.FRONTEND_ORIGIN) {
     throw new HttpError(403, 'Request origin is not allowed')
   }

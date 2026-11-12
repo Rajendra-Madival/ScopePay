@@ -21,8 +21,8 @@ export const paymentQuerySchema = z.object({
 
 const projectFieldsSchema = z.object({
   title,
-  clientName: z.string().trim().min(1).max(120),
-  clientEmail: z.email().max(254),
+  clientName: z.string().trim().min(1).max(120).nullable().optional(),
+  clientEmail: z.email().max(254).nullable().optional(),
   description: projectDescription,
   budget: cents,
   currency: currency.default('USD'),
