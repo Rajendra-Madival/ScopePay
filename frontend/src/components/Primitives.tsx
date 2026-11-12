@@ -64,6 +64,22 @@ export function ProjectStatusBadge({ completed }: { completed: boolean }) {
   )
 }
 
+export function ScopeStatusBadge({ status }: { status: 'PENDING' | 'REVIEWED' | 'ACCEPTED' | 'REJECTED' }) {
+  const map = {
+    PENDING: 'bg-amber-50 text-amber-800',
+    REVIEWED: 'bg-sky-50 text-sky-800',
+    ACCEPTED: 'bg-emerald-50 text-emerald-800',
+    REJECTED: 'bg-rose-50 text-rose-800',
+  }
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${map[status]}`}>
+      <span className={`size-1.5 rounded-full ${status === 'ACCEPTED' ? 'bg-emerald-600' : status === 'REJECTED' ? 'bg-rose-500' : status === 'REVIEWED' ? 'bg-sky-500' : 'bg-amber-500'}`} />
+      {status}
+    </span>
+  )
+}
+
 export function PageHeading({
   eyebrow,
   title,

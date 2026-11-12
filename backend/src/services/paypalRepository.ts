@@ -15,33 +15,33 @@ export type PaymentForCapture = {
 }
 
 export type PaypalRepository = {
-  getMilestone(id: string): Promise<{
+  getMilestone(id: string, ownerId: string): Promise<{
     id: string
     amount: number
     status: 'PENDING' | 'PAID'
     currency: string
   } | null>
-  reservePayment(milestoneId: string, amount: number, currency: string): Promise<
+  reservePayment(milestoneId: string, ownerId: string, amount: number, currency: string): Promise<
     | { kind: 'created'; paymentId: string }
     | { kind: 'existing'; orderId: string }
     | { kind: 'busy' }
     | { kind: 'missing' }
     | { kind: 'changed' }
   >
-  saveOrder(paymentId: string, orderId: string): Promise<void>
-  deleteReservation(paymentId: string): Promise<void>
-  getPaymentForCapture(orderId: string): Promise<PaymentForCapture | null>
-  claimPayment(paymentId: string): Promise<boolean>
-  releasePayment(paymentId: string, failed?: boolean): Promise<void>
-  cancelPayment(orderId: string): Promise<boolean>
-  completePayment(paymentId: string, milestoneId: string): Promise<void>
+  saveOrder(paymentId: string, orderId: string, ownerId: string): Promise<void>
+  deleteReservation(paymentId: string, ownerId: string): Promise<void>
+  getPaymentForCapture(orderId: string, ownerId: string): Promise<PaymentForCapture | null>
+  claimPayment(paymentId: string, ownerId: string): Promise<boolean>
+  releasePayment(paymentId: string, ownerId: string, failed?: boolean): Promise<void>
+  cancelPayment(orderId: string, ownerId: string): Promise<boolean>
+  completePayment(paymentId: string, milestoneId: string, ownerId: string): Promise<void>
 }
 
 export function createPaypalRepository(database: Database = prisma): PaypalRepository {
   return {
-    async getMilestone(id) {
-      return database.milestone.findUnique({
-        where: { id },
+    async getMilestone(id, ownerId) {
+      return database.milestone.findFirst({
+        where: { id, project: { ownerId } },
         select: { id: true, amount: true, status: true, project: { select: { currency: true } } },
       }).then((milestone) =>
         milestone
@@ -55,7 +55,7 @@ export function createPaypalRepository(database: Database = prisma): PaypalRepos
       )
     },
 
-    async reservePayment(milestoneId, amount, currency) {
+    async reservePayment(milestoneId, ownerId, amount, currency) {
       return database.$transaction(async (transaction) => {
         const milestone = await transaction.$queryRaw<{
           id: string
@@ -66,7 +66,7 @@ export function createPaypalRepository(database: Database = prisma): PaypalRepos
           SELECT m."id", m."amount", m."status", p."currency"
           FROM "Milestone" AS m
           INNER JOIN "Project" AS p ON p."id" = m."projectId"
-          WHERE m."id" = ${milestoneId}
+          WHERE m."id" = ${milestoneId} AND p."ownerId" = ${ownerId}
           FOR UPDATE OF m, p
         `
         if (milestone.length === 0) return { kind: 'missing' as const }
@@ -79,6 +79,7 @@ export function createPaypalRepository(database: Database = prisma): PaypalRepos
         const existing = await transaction.payment.findFirst({
           where: {
             milestoneId,
+            milestone: { project: { ownerId } },
             status: { in: ['CREATING', 'PENDING', 'PROCESSING'] },
           },
           orderBy: { createdAt: 'desc' },
@@ -117,22 +118,31 @@ export function createPaypalRepository(database: Database = prisma): PaypalRepos
       })
     },
 
-    async saveOrder(paymentId, orderId) {
-      await database.payment.update({
-        where: { id: paymentId, status: 'CREATING' },
+    async saveOrder(paymentId, orderId, ownerId) {
+      const updated = await database.payment.updateMany({
+        where: {
+          id: paymentId,
+          status: 'CREATING',
+          milestone: { project: { ownerId } },
+        },
         data: { paypalOrderId: orderId, status: 'PENDING' },
       })
+      if (updated.count !== 1) throw new Error('Payment reservation could not be saved')
     },
 
-    async deleteReservation(paymentId) {
+    async deleteReservation(paymentId, ownerId) {
       await database.payment.deleteMany({
-        where: { id: paymentId, status: 'CREATING' },
+        where: {
+          id: paymentId,
+          status: 'CREATING',
+          milestone: { project: { ownerId } },
+        },
       })
     },
 
-    async getPaymentForCapture(orderId) {
-      return database.payment.findUnique({
-        where: { paypalOrderId: orderId },
+    async getPaymentForCapture(orderId, ownerId) {
+      return database.payment.findFirst({
+        where: { paypalOrderId: orderId, milestone: { project: { ownerId } } },
         include: {
           milestone: {
             select: {
@@ -146,39 +156,55 @@ export function createPaypalRepository(database: Database = prisma): PaypalRepos
       })
     },
 
-    async claimPayment(paymentId) {
+    async claimPayment(paymentId, ownerId) {
       const result = await database.payment.updateMany({
-        where: { id: paymentId, status: 'PENDING' },
+        where: {
+          id: paymentId,
+          status: 'PENDING',
+          milestone: { project: { ownerId } },
+        },
         data: { status: 'PROCESSING' },
       })
       return result.count === 1
     },
 
-    async releasePayment(paymentId, failed = false) {
+    async releasePayment(paymentId, ownerId, failed = false) {
       await database.payment.updateMany({
-        where: { id: paymentId, status: 'PROCESSING' },
+        where: {
+          id: paymentId,
+          status: 'PROCESSING',
+          milestone: { project: { ownerId } },
+        },
         data: { status: failed ? 'FAILED' : 'PENDING' },
       })
     },
 
-    async cancelPayment(orderId) {
+    async cancelPayment(orderId, ownerId) {
       const result = await database.payment.updateMany({
-        where: { paypalOrderId: orderId, status: 'PENDING' },
+        where: {
+          paypalOrderId: orderId,
+          status: 'PENDING',
+          milestone: { project: { ownerId } },
+        },
         data: { status: 'CANCELLED' },
       })
       return result.count === 1
     },
 
-    async completePayment(paymentId, milestoneId) {
+    async completePayment(paymentId, milestoneId, ownerId) {
       await database.$transaction(async (transaction) => {
         const payment = await transaction.payment.updateMany({
-          where: { id: paymentId, status: 'PROCESSING' },
+          where: {
+            id: paymentId,
+            status: 'PROCESSING',
+            milestone: { project: { ownerId } },
+          },
           data: { status: 'COMPLETED' },
         })
         if (payment.count !== 1) throw new Error('Payment could not be finalized')
 
         const milestone = await transaction.milestone.updateMany({
-          where: { id: milestoneId, status: 'PENDING' },
+          where: { id: milestoneId, status: 'PENDING', project: { ownerId } },
           data: { status: 'PAID' },
         })
         if (milestone.count !== 1) throw new Error('Milestone could not be finalized')

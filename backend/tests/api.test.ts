@@ -8,8 +8,12 @@ process.env.PAYPAL_CLIENT_ID ??= ''
 process.env.PAYPAL_CLIENT_SECRET ??= ''
 
 const { createPaypalRouter } = await import('../src/routes/paypal.js')
+const { createProjectsRouter } = await import('../src/routes/projects.js')
+const { createScopeChangesRouter } = await import('../src/routes/scopeChanges.js')
 const { errorHandler } = await import('../src/middleware/errors.js')
 const { createPaypalClient, PaypalApiError } = await import('../src/services/paypalClient.js')
+const { createOpenAiScopeAnalyzer } = await import('../src/services/openAiScopeAnalyzer.js')
+const { HttpError } = await import('../src/middleware/errors.js')
 const { env } = await import('../src/config/env.js')
 
 before(() => {
@@ -47,25 +51,25 @@ function createHarness({
   let captureCalls = 0
 
   const repository = {
-    getMilestone: async (id: string) =>
+    getMilestone: async (id: string, _ownerId: string) =>
       id === 'milestone-1'
         ? { id, amount: 2500, status: milestoneStatus, currency: 'USD' }
         : null,
-    reservePayment: async (milestoneId: string, amount: number, currency: string) => {
+    reservePayment: async (milestoneId: string, _ownerId: string, amount: number, currency: string) => {
       if (paymentStatus === 'PENDING' && currentOrderId) {
         return { kind: 'existing' as const, orderId: currentOrderId }
       }
       paymentStatus = 'CREATING'
       return { kind: 'created' as const, paymentId: 'payment-1' }
     },
-    saveOrder: async (_paymentId: string, orderId: string) => {
+    saveOrder: async (_paymentId: string, orderId: string, _ownerId: string) => {
       currentOrderId = orderId
       paymentStatus = 'PENDING'
     },
-    deleteReservation: async () => {
+    deleteReservation: async (_paymentId: string, _ownerId: string) => {
       paymentStatus = 'FAILED'
     },
-    getPaymentForCapture: async (orderId: string) =>
+    getPaymentForCapture: async (orderId: string, _ownerId: string) =>
       orderId === currentOrderId
         ? {
             id: 'payment-1',
@@ -81,15 +85,15 @@ function createHarness({
             },
           }
         : null,
-    claimPayment: async () => {
+    claimPayment: async (_paymentId: string, _ownerId: string) => {
       if (paymentStatus !== 'PENDING') return false
       paymentStatus = 'PROCESSING'
       return true
     },
-    releasePayment: async (_paymentId: string, failed = false) => {
+    releasePayment: async (_paymentId: string, _ownerId: string, failed = false) => {
       paymentStatus = failed ? 'FAILED' : 'PENDING'
     },
-    cancelPayment: async (orderId: string) => {
+    cancelPayment: async (orderId: string, _ownerId: string) => {
       if (orderId !== currentOrderId || paymentStatus !== 'PENDING') return false
       paymentStatus = 'CANCELLED'
       return true
@@ -115,6 +119,10 @@ function createHarness({
 
   const app = express()
   app.use(express.json())
+  app.use((request, _response, next) => {
+    request.user = { id: 'test-owner', name: 'Test Owner', email: 'test@example.com' }
+    next()
+  })
   app.use('/api/paypal', createPaypalRouter(repository, paypal))
   app.use(errorHandler)
 
@@ -301,4 +309,142 @@ test('PayPal client obtains OAuth token and creates a server-priced Orders v2 or
       amount: { currency_code: 'USD', value: '25.00' },
     }],
   })
+})
+
+test('OpenAI scope analyzer validates structured output and avoids response storage', async () => {
+  const analysis = {
+    summary: 'The request adds an onboarding checklist.',
+    impact: 'MEDIUM',
+    addedWork: ['Create a checklist flow'],
+    risks: ['Checklist approval criteria are unclear'],
+    clarificationQuestions: ['Who approves the checklist?'],
+  }
+  let endpoint = ''
+  let authorization = ''
+  let body: Record<string, unknown> | undefined
+  const analyzer = createOpenAiScopeAnalyzer(async (input, init) => {
+    endpoint = String(input)
+    authorization = new Headers(init?.headers).get('authorization') ?? ''
+    body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    return new Response(JSON.stringify({
+      output: [{
+        type: 'message',
+        content: [{ type: 'output_text', text: JSON.stringify(analysis) }],
+      }],
+    }), { status: 200 })
+  }, { apiKey: 'test-api-key', model: 'test-model' })
+
+  assert.deepEqual(await analyzer({
+    originalRequirement: 'Deliver a landing page',
+    newRequirement: 'Add an onboarding checklist',
+  }), analysis)
+  assert.equal(endpoint, 'https://api.openai.com/v1/responses')
+  assert.equal(authorization, 'Bearer test-api-key')
+  assert.equal(body?.store, false)
+  assert.equal(body?.model, 'test-model')
+})
+
+test('OpenAI scope analyzer reports missing credentials instead of returning placeholder analysis', async () => {
+  const analyzer = createOpenAiScopeAnalyzer(
+    async () => { throw new Error('The provider must not be called without credentials') },
+    { apiKey: '', model: 'test-model' },
+  )
+
+  await assert.rejects(
+    analyzer({ originalRequirement: 'Original', newRequirement: 'Updated' }),
+    (error: unknown) => error instanceof HttpError && error.status === 503,
+  )
+})
+
+test('scope changes can be created and reviewed for a project', async () => {
+  const created: Record<string, unknown>[] = []
+  const analyzed: { originalRequirement: string; newRequirement: string }[] = []
+  const analysis = {
+    summary: 'The request adds an onboarding checklist.',
+    impact: 'MEDIUM' as const,
+    addedWork: ['Create a checklist flow'],
+    risks: ['Checklist approval criteria are unclear'],
+    clarificationQuestions: ['Who approves the checklist?'],
+  }
+  const prisma = {
+    project: {
+      findFirst: async ({ where }: { where: { id: string; ownerId?: string } }) =>
+        where.id === 'project-1' && where.ownerId === 'test-owner' ? { id: 'project-1' } : null,
+    },
+    scopeChange: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const entry = { id: 'scope-1', createdAt: '2026-01-01T00:00:00.000Z', ...data }
+        created.push(entry)
+        return entry
+      },
+      findMany: async ({ where }: { where: { projectId: string } }) =>
+        created.filter((entry) => entry.projectId === where.projectId),
+      findFirst: async ({ where }: { where: { id: string; project?: { ownerId: string } } }) =>
+        created.find((entry) => entry.id === where.id) ?? null,
+      updateMany: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        const index = created.findIndex((entry) => entry.id === where.id)
+        if (index === -1) return { count: 0 }
+        created[index] = { ...created[index], ...data }
+        return { count: 1 }
+      },
+      deleteMany: async ({ where }: { where: { id: string } }) => {
+        const index = created.findIndex((entry) => entry.id === where.id)
+        if (index >= 0) created.splice(index, 1)
+        return { count: index >= 0 ? 1 : 0 }
+      },
+    },
+  }
+
+  const app = express()
+  app.use(express.json())
+  app.use((request, _response, next) => {
+    request.user = { id: 'test-owner', name: 'Test Owner', email: 'test@example.com' }
+    next()
+  })
+  app.use('/api/projects', createProjectsRouter(prisma as never, async (requirements) => {
+    analyzed.push(requirements)
+    return analysis
+  }))
+  app.use('/api/scope-changes', createScopeChangesRouter(prisma as never))
+  app.use(errorHandler)
+
+  const createResponse = await request(app)
+    .post('/api/projects/project-1/scope-changes')
+    .send({
+      originalRequirement: 'Alpha deliverable',
+      newRequirement: 'Add onboarding checklist',
+      status: 'PENDING',
+    })
+
+  assert.equal(createResponse.status, 201)
+  assert.equal(createResponse.body.originalRequirement, 'Alpha deliverable')
+
+  const analysisResponse = await request(app)
+    .post('/api/projects/project-1/scope-changes/analyze')
+    .send({
+      originalRequirement: 'Alpha deliverable',
+      newRequirement: 'Add onboarding checklist',
+    })
+  assert.equal(analysisResponse.status, 200)
+  assert.deepEqual(analysisResponse.body, analysis)
+  assert.deepEqual(analyzed, [{
+    originalRequirement: 'Alpha deliverable',
+    newRequirement: 'Add onboarding checklist',
+  }])
+
+  const foreignProjectResponse = await request(app)
+    .post('/api/projects/another-users-project/scope-changes/analyze')
+    .send({
+      originalRequirement: 'Private requirement',
+      newRequirement: 'Private revision',
+    })
+  assert.equal(foreignProjectResponse.status, 404)
+  assert.equal(analyzed.length, 1)
+
+  const updateResponse = await request(app)
+    .patch('/api/scope-changes/scope-1')
+    .send({ status: 'ACCEPTED' })
+
+  assert.equal(updateResponse.status, 200)
+  assert.equal(updateResponse.body.status, 'ACCEPTED')
 })

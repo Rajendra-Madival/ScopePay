@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { env } from '../config/env.js'
+import { getAuthenticatedUser } from '../middleware/auth.js'
 import { HttpError } from '../middleware/errors.js'
 import { PaypalApiError, type PaypalGateway } from '../services/paypalClient.js'
 import type { PaypalRepository } from '../services/paypalRepository.js'
@@ -50,8 +51,9 @@ export function createPaypalRouter(
   const router = Router()
 
   router.post('/create-order', async (request, response) => {
+    const ownerId = getAuthenticatedUser(request).id
     const { milestoneId } = createOrderSchema.parse(request.body)
-    const milestone = await repository.getMilestone(milestoneId)
+    const milestone = await repository.getMilestone(milestoneId, ownerId)
     if (!milestone) throw new HttpError(404, 'Milestone not found')
     if (milestone.status !== 'PENDING') {
       throw new HttpError(409, 'Only unpaid milestones can be checked out')
@@ -65,6 +67,7 @@ export function createPaypalRouter(
 
     const reservation = await repository.reservePayment(
       milestoneId,
+      ownerId,
       milestone.amount,
       env.PAYPAL_CURRENCY,
     )
@@ -87,25 +90,27 @@ export function createPaypalRouter(
         amount: milestone.amount,
         currency: env.PAYPAL_CURRENCY,
       })
-      await repository.saveOrder(reservation.paymentId, orderId)
+      await repository.saveOrder(reservation.paymentId, orderId, ownerId)
       response.status(201).json({ orderId })
     } catch (error) {
-      await repository.deleteReservation(reservation.paymentId)
+      await repository.deleteReservation(reservation.paymentId, ownerId)
       throw error
     }
   })
 
   router.post('/cancel-order', async (request, response) => {
+    const ownerId = getAuthenticatedUser(request).id
     const { orderId } = captureOrderSchema.parse(request.body)
-    if (!(await repository.cancelPayment(orderId))) {
+    if (!(await repository.cancelPayment(orderId, ownerId))) {
       throw new HttpError(409, 'This PayPal order cannot be cancelled')
     }
     response.status(204).end()
   })
 
   router.post('/capture-order', async (request, response) => {
+    const ownerId = getAuthenticatedUser(request).id
     const { orderId } = captureOrderSchema.parse(request.body)
-    const payment = await repository.getPaymentForCapture(orderId)
+    const payment = await repository.getPaymentForCapture(orderId, ownerId)
     if (!payment) throw new HttpError(404, 'PayPal order is not associated with a payment')
     if (payment.status === 'COMPLETED') {
       throw new HttpError(409, 'This PayPal order has already been captured')
@@ -122,7 +127,7 @@ export function createPaypalRouter(
     ) {
       throw new HttpError(409, 'Payment does not match the current milestone')
     }
-    if (!(await repository.claimPayment(payment.id))) {
+    if (!(await repository.claimPayment(payment.id, ownerId))) {
       throw new HttpError(409, 'This PayPal order is already being captured')
     }
 
@@ -139,11 +144,12 @@ export function createPaypalRouter(
         currency: payment.currency,
       })
       if (!verified) throw new HttpError(502, 'PayPal capture could not be verified')
-      await repository.completePayment(payment.id, payment.milestoneId)
+      await repository.completePayment(payment.id, payment.milestoneId, ownerId)
     } catch (error) {
       if (!verified) {
         await repository.releasePayment(
           payment.id,
+          ownerId,
           receivedResponse || (error instanceof PaypalApiError && error.paymentFailed),
         )
       }

@@ -1,7 +1,7 @@
 import type { Project } from '../types'
 import { Icon } from './Icon'
 import { Button, PageHeading, ProjectStatusBadge } from './Primitives'
-import { formatMoney } from '../utils/format'
+import { formatMoney, formatMoneyTotals } from '../utils/format'
 
 function initials(name: string) {
   return name
@@ -17,26 +17,32 @@ export function Dashboard({
   onCreate,
   onOpenProject,
   onViewProjects,
+  userName,
 }: {
   projects: Project[]
   onCreate: () => void
   onOpenProject: (id: string) => void
   onViewProjects: () => void
+  userName?: string
 }) {
   const allMilestones = projects.flatMap((project) =>
     project.milestones.map((milestone) => ({ project, milestone })),
   )
   const collected = allMilestones
     .filter(({ milestone }) => milestone.status === 'paid')
-    .reduce((sum, { milestone }) => sum + milestone.amountCents, 0)
+    .map(({ project, milestone }) => ({ amountCents: milestone.amountCents, currency: project.currency }))
   const upcoming = allMilestones
     .filter(({ milestone }) => milestone.status === 'pending')
-    .reduce((sum, { milestone }) => sum + milestone.amountCents, 0)
+    .map(({ project, milestone }) => ({ amountCents: milestone.amountCents, currency: project.currency }))
   const activeProjects = projects.filter((project) => project.status === 'in progress').length
+  const upcomingDeliveries = allMilestones
+    .filter(({ milestone }) => milestone.status === 'pending')
+    .sort((left, right) => left.project.title.localeCompare(right.project.title))
+    .slice(0, 3)
 
   const stats = [
-    { title: 'Total collected', value: formatMoney(collected), icon: 'wallet' as const, note: 'From completed milestones', tone: 'green' },
-    { title: 'Awaiting payment', value: formatMoney(upcoming), icon: 'clock' as const, note: `${allMilestones.filter(({ milestone }) => milestone.status === 'pending').length} pending milestones`, tone: 'amber' },
+    { title: 'Total collected', value: formatMoneyTotals(collected), icon: 'wallet' as const, note: 'From completed milestones', tone: 'green' },
+    { title: 'Awaiting payment', value: formatMoneyTotals(upcoming), icon: 'clock' as const, note: `${allMilestones.filter(({ milestone }) => milestone.status === 'pending').length} pending milestones`, tone: 'amber' },
     { title: 'Active projects', value: String(activeProjects).padStart(2, '0'), icon: 'briefcase' as const, note: `${projects.length} projects in workspace`, tone: 'blue' },
     { title: 'Milestones', value: String(allMilestones.length).padStart(2, '0'), icon: 'layers' as const, note: `${allMilestones.filter(({ milestone }) => milestone.status === 'paid').length} paid`, tone: 'purple' },
   ]
@@ -45,7 +51,7 @@ export function Dashboard({
     <>
       <PageHeading
         eyebrow="Project overview"
-        title="Good morning, Alex"
+        title={userName ? `Good morning, ${userName.split(' ')[0]}` : 'Good morning'}
         description="Here’s what’s happening across your projects."
         action={<Button icon="plus" onClick={onCreate}>New project</Button>}
       />
@@ -67,6 +73,41 @@ export function Dashboard({
             <p className="mt-1 text-xs text-stone-400">{stat.note}</p>
           </div>
         ))}
+      </section>
+
+      <section className="mb-8 grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+        <div className="rounded-2xl border border-stone-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(27,39,30,0.03)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.15em] text-forest-700">Quick actions</p>
+              <h2 className="mt-2 text-lg font-semibold text-stone-900">Client check-ins</h2>
+            </div>
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Updated today</span>
+          </div>
+          <div className="mt-5 space-y-3">
+            {upcomingDeliveries.length > 0 ? upcomingDeliveries.map(({ project, milestone }) => (
+              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5" key={`${project.id}-${milestone.id}`}>
+                <div>
+                  <p className="text-sm font-semibold text-stone-800">{milestone.title}</p>
+                  <p className="text-xs text-stone-500">{project.clientName} · {project.title}</p>
+                </div>
+                <span className="text-sm font-semibold text-forest-700">{formatMoney(milestone.amountCents, project.currency)}</span>
+              </div>
+            )) : (
+              <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-3 py-4 text-sm text-stone-500">No upcoming milestones. You’re all caught up.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-stone-200/80 bg-gradient-to-br from-forest-700 to-forest-800 p-5 text-white shadow-[0_1px_2px_rgba(27,39,30,0.03)]">
+          <p className="text-xs font-bold uppercase tracking-[0.15em] text-emerald-100">Momentum</p>
+          <h2 className="mt-2 text-2xl font-semibold">{activeProjects} active projects</h2>
+          <p className="mt-2 text-sm text-emerald-50">Your pipeline is healthy, and your next milestone plan is ready for review.</p>
+          <button className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white/12 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/16" onClick={onViewProjects} type="button">
+            Review workspace
+            <Icon className="size-4" name="arrow-right" />
+          </button>
+        </div>
       </section>
 
       <section className="overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_2px_rgba(27,39,30,0.03)]">
@@ -119,7 +160,7 @@ export function Dashboard({
                     )}
                   </span>
                   <span className="justify-self-end text-right sm:justify-self-start sm:text-left">
-                    <span className="block text-sm font-semibold text-stone-800">{formatMoney(project.budgetCents)}</span>
+                    <span className="block text-sm font-semibold text-stone-800">{formatMoney(project.budgetCents, project.currency)}</span>
                     <span className="mt-0.5 block sm:hidden"><ProjectStatusBadge completed={project.status === 'completed'} /></span>
                     <span className="hidden text-xs capitalize text-stone-400 sm:block">{project.status}</span>
                   </span>

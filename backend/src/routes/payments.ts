@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import type { Database } from '../config/database.js'
+import { getAuthenticatedUser } from '../middleware/auth.js'
 import { HttpError } from '../middleware/errors.js'
 import { idParamsSchema, paymentQuerySchema } from '../validation/schemas.js'
 
@@ -7,13 +8,17 @@ export function createPaymentsRouter(prisma: Database) {
   const paymentsRouter = Router()
 
 paymentsRouter.get('/', async (request, response) => {
+  const ownerId = getAuthenticatedUser(request).id
   const { milestoneId, projectId } = paymentQuerySchema.parse(request.query)
   const payments = await prisma.payment.findMany({
     where: {
       paypalOrderId: { not: null },
       status: { not: 'CREATING' },
       ...(milestoneId ? { milestoneId } : {}),
-      ...(projectId ? { milestone: { projectId } } : {}),
+      milestone: {
+        ...(projectId ? { projectId } : {}),
+        project: { ownerId },
+      },
     },
     include: {
       milestone: {
@@ -26,9 +31,10 @@ paymentsRouter.get('/', async (request, response) => {
 })
 
 paymentsRouter.get('/:id', async (request, response) => {
+  const ownerId = getAuthenticatedUser(request).id
   const { id } = idParamsSchema.parse(request.params)
-  const payment = await prisma.payment.findUnique({
-    where: { id },
+  const payment = await prisma.payment.findFirst({
+    where: { id, milestone: { project: { ownerId } } },
     include: {
       milestone: {
         include: { project: { select: { id: true, title: true, clientName: true } } },

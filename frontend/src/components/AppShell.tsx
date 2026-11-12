@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
+import type { User } from '../types'
 import { Icon } from './Icon'
 import type { IconName } from './Icon'
 
-export type Page = 'dashboard' | 'projects' | 'payments' | 'create' | 'details'
+export type Page = 'dashboard' | 'projects' | 'payments' | 'create' | 'details' | 'profile'
 
 const navigation: { id: Page; label: string; icon: IconName }[] = [
   { id: 'dashboard', label: 'Overview', icon: 'grid' },
@@ -14,11 +15,15 @@ export function AppShell({
   page,
   onNavigate,
   onCreate,
+  onLogout,
+  user,
   children,
 }: {
   page: Page
   onNavigate: (page: Page) => void
   onCreate: () => void
+  onLogout?: () => void
+  user?: User | null
   children: ReactNode
 }) {
   const activePage = page === 'create' || page === 'details' ? 'projects' : page
@@ -63,13 +68,27 @@ export function AppShell({
         <div className="mt-auto border-t border-stone-100 p-4">
           <div className="flex items-center gap-3 rounded-xl px-2 py-2">
             <div className="flex size-9 items-center justify-center rounded-full bg-[#e6eee8] text-xs font-bold text-forest-800">
-              AM
+              {user?.name ? user.name.split(' ').map((part) => part[0]).slice(0,2).join('').toUpperCase() : 'GU'}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-stone-800">Alex Morgan</p>
-              <p className="text-xs text-stone-500">Independent designer</p>
+              <p className="truncate text-sm font-semibold text-stone-800">{user?.name ?? 'Guest'}</p>
+              <p className="text-xs text-stone-500">{user ? 'Workspace owner' : 'Guest access'}</p>
             </div>
-            <Icon className="size-4 text-stone-400" name="chevron-down" />
+            {user && (
+              <button
+                aria-current={page === 'profile' ? 'page' : undefined}
+                className="text-xs font-medium text-forest-700 hover:text-forest-800"
+                onClick={() => onNavigate('profile')}
+                type="button"
+              >
+                Profile
+              </button>
+            )}
+            {onLogout && (
+              <button className="text-xs font-medium text-stone-500 hover:text-stone-800" onClick={onLogout} type="button">
+                Log out
+              </button>
+            )}
           </div>
         </div>
       </aside>
@@ -92,11 +111,25 @@ export function AppShell({
             </span>
           </div>
           <div className="flex items-center gap-3">
+            {user && (
+              <button
+                className="rounded-full px-2 py-1.5 text-xs font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900 sm:px-3"
+                onClick={() => onNavigate('profile')}
+                type="button"
+              >
+                Profile
+              </button>
+            )}
             <span className="hidden rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-500 sm:inline-flex">
-              Preview workspace
+              {user ? `${user.name.split(' ')[0]}'s workspace` : 'Preview workspace'}
             </span>
+            {onLogout && (
+              <button className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-600 hover:text-stone-900" onClick={onLogout} type="button">
+                Log out
+              </button>
+            )}
             <div className="flex size-8 items-center justify-center rounded-full bg-[#e6eee8] text-[11px] font-bold text-forest-800 lg:hidden">
-              AM
+              {user?.name ? user.name.split(' ').map((part) => part[0]).slice(0,2).join('').toUpperCase() : 'GU'}
             </div>
           </div>
         </header>

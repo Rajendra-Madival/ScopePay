@@ -28,18 +28,63 @@ enum ScopeChangeStatus {
   REJECTED
 }
 
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("member")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  projects      Project[]
+  sessions      AuthSession[]
+  resetTokens   PasswordResetToken[]
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  csrfHash  String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model Project {
   id          String        @id @default(cuid())
+  ownerId     String?
   title       String
   clientName  String
   clientEmail String
   description String
   budget      Int
   currency    String        @default("USD")
+  deadline    String?
+  plan        Json?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  owner       User?         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   milestones  Milestone[]
   scopeChanges ScopeChange[]
+
+  @@index([ownerId])
 }
 
 model Milestone {
@@ -50,6 +95,8 @@ model Milestone {
   amount      Int
   status      MilestoneStatus @default(PENDING)
   dueDate     DateTime?
+  deliverables Json?
+  estimatedDays Int?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)

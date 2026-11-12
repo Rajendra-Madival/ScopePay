@@ -63,8 +63,8 @@ export function ProjectsPage({
                 <p className="mt-1 text-sm text-stone-500">{project.clientName}</p>
                 <div className="my-5 border-t border-stone-100" />
                 <div className="grid grid-cols-2 gap-3">
-                  <div><p className="text-xs text-stone-400">Project budget</p><p className="mt-1 text-sm font-semibold text-stone-800">{formatMoney(project.budgetCents)}</p></div>
-                  <div><p className="text-xs text-stone-400">Awaiting payment</p><p className="mt-1 text-sm font-semibold text-stone-800">{formatMoney(pendingCents)}</p></div>
+                  <div><p className="text-xs text-stone-400">Project budget</p><p className="mt-1 text-sm font-semibold text-stone-800">{formatMoney(project.budgetCents, project.currency)}</p></div>
+                  <div><p className="text-xs text-stone-400">Awaiting payment</p><p className="mt-1 text-sm font-semibold text-stone-800">{formatMoney(pendingCents, project.currency)}</p></div>
                 </div>
                 <div className="mt-5 flex items-center justify-between border-t border-stone-100 pt-4 text-xs text-stone-400">
                   <span>{paid} of {project.milestones.length} milestones paid</span>

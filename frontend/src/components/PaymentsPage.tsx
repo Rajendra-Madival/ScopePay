@@ -1,7 +1,7 @@
 import type { Payment } from '../lib/api'
 import { Icon } from './Icon'
 import { Button, PageHeading } from './Primitives'
-import { formatDate, formatMoney } from '../utils/format'
+import { formatDate, formatMoney, formatMoneyTotals } from '../utils/format'
 
 const paymentLabels: Record<Payment['status'], string> = {
   CREATING: 'Creating checkout',
@@ -47,8 +47,14 @@ export function PaymentsPage({
 }) {
   const completed = payments.filter((payment) => payment.status === 'COMPLETED')
   const pending = payments.filter((payment) => ['PENDING', 'PROCESSING'].includes(payment.status))
-  const completedTotal = completed.reduce((total, payment) => total + payment.amount, 0)
-  const pendingTotal = pending.reduce((total, payment) => total + payment.amount, 0)
+  const completedTotal = formatMoneyTotals(completed.map((payment) => ({
+    amountCents: payment.amount,
+    currency: payment.currency,
+  })))
+  const pendingTotal = formatMoneyTotals(pending.map((payment) => ({
+    amountCents: payment.amount,
+    currency: payment.currency,
+  })))
 
   return (
     <>
@@ -61,12 +67,12 @@ export function PaymentsPage({
       <section aria-label="Payment totals" className="mb-6 grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-stone-200/80 bg-white p-5">
           <div className="flex items-center gap-2 text-sm text-stone-500"><span className="size-2 rounded-full bg-amber-400" /> Pending capture</div>
-          <p className="mt-3 text-[28px] font-semibold tracking-tight text-stone-900">{formatMoney(pendingTotal)}</p>
+          <p className="mt-3 text-[28px] font-semibold tracking-tight text-stone-900">{pendingTotal}</p>
           <p className="mt-1 text-xs text-stone-400">{pending.length} checkout records awaiting verification</p>
         </div>
         <div className="rounded-2xl border border-stone-200/80 bg-white p-5">
           <div className="flex items-center gap-2 text-sm text-stone-500"><span className="size-2 rounded-full bg-emerald-500" /> Verified completed</div>
-          <p className="mt-3 text-[28px] font-semibold tracking-tight text-stone-900">{formatMoney(completedTotal)}</p>
+          <p className="mt-3 text-[28px] font-semibold tracking-tight text-stone-900">{completedTotal}</p>
           <p className="mt-1 text-xs text-stone-400">{completed.length} server-verified captures</p>
         </div>
       </section>
@@ -87,7 +93,7 @@ export function PaymentsPage({
             {payments.map((payment) => (
               <div className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1.4fr)_minmax(140px,.8fr)_minmax(120px,.8fr)_auto] sm:items-center sm:gap-4 sm:px-6" key={payment.id}>
                 <div className="min-w-0"><p className="truncate text-sm font-semibold text-stone-800">{payment.milestone.title}</p><button className="mt-0.5 truncate text-xs text-stone-400 hover:text-forest-700" onClick={() => onOpenProject(payment.milestone.project.id)}>{payment.milestone.project.title} · {payment.milestone.project.clientName}</button></div>
-                <div className="flex items-center justify-between sm:block"><span className="text-xs text-stone-400 sm:hidden">Amount</span><span className="text-sm font-semibold text-stone-800">{formatMoney(payment.amount)}</span></div>
+                <div className="flex items-center justify-between sm:block"><span className="text-xs text-stone-400 sm:hidden">Amount</span><span className="text-sm font-semibold text-stone-800">{formatMoney(payment.amount, payment.currency)}</span></div>
                 <div className="flex items-center justify-between sm:block"><span className="text-xs text-stone-400 sm:hidden">Status</span><PaymentStatus status={payment.status} /></div>
                 <div className="flex items-center justify-between gap-3 sm:block"><span className="text-xs text-stone-400 sm:hidden">Created</span><span className="text-sm text-stone-500">{formatDate(payment.createdAt)}</span><Button className="sm:hidden" icon="arrow-right" variant="quiet" onClick={() => onOpenProject(payment.milestone.project.id)}>Project</Button><Button className="hidden sm:inline-flex" icon="arrow-right" variant="quiet" onClick={() => onOpenProject(payment.milestone.project.id)}>Project</Button></div>
               </div>
