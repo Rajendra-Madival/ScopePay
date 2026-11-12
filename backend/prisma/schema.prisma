@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MilestoneStatus {
+  PENDING
+  PAID
+}
+
+enum PaymentStatus {
+  CREATING
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ScopeChangeStatus {
+  PENDING
+  REVIEWED
+  ACCEPTED
+  REJECTED
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  title       String
+  clientName  String
+  clientEmail String
+  description String
+  budget      Int
+  currency    String        @default("USD")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  milestones  Milestone[]
+  scopeChanges ScopeChange[]
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  projectId   String
+  title       String
+  description String
+  amount      Int
+  status      MilestoneStatus @default(PENDING)
+  dueDate     DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  payments    Payment[]
+
+  @@index([projectId])
+}
+
+model Payment {
+  id           String        @id @default(cuid())
+  milestoneId  String
+  paypalOrderId String?       @unique
+  amount       Int
+  currency     String        @default("USD")
+  status       PaymentStatus @default(PENDING)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  milestone    Milestone     @relation(fields: [milestoneId], references: [id], onDelete: Restrict)
+
+  @@index([milestoneId])
+}
+
+model ScopeChange {
+  id                  String           @id @default(cuid())
+  projectId           String
+  originalRequirement String
+  newRequirement      String
+  aiAnalysis          Json?
+  status              ScopeChangeStatus @default(PENDING)
+  createdAt           DateTime         @default(now())
+  project             Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
